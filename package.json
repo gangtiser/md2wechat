@@ -1,0 +1,32 @@
+{
+  "name": "md2wechat",
+  "version": "0.1.0",
+  "description": "TypeScript md2wechat CLI, Skill, and MCP server without hosted API conversion mode.",
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "bin": {
+    "md2wechat": "./dist/src/cli/index.js"
+  },
+  "files": [
+    "dist",
+    "skills",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test \"dist/test/**/*.test.js\"",
+    "verify:api-removal": "npm run build && node --test dist/test/api-removal.test.js",
+    "verify": "npm run typecheck && npm test && npm run verify:api-removal"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "0.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.9.2"
+  }
+}
