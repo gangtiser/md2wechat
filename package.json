@@ -1,23 +1,43 @@
 {
-  "name": "md2wechat",
-  "version": "0.1.0",
+  "name": "@gangtiser/md2wechat",
+  "version": "0.1.1",
   "description": "TypeScript md2wechat CLI, Skill, and MCP server without hosted API conversion mode.",
+  "keywords": [
+    "wechat",
+    "markdown",
+    "mcp",
+    "codex",
+    "cli",
+    "openai"
+  ],
+  "author": "Gangtiser",
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "bin": {
-    "md2wechat": "./dist/src/cli/index.js"
+    "md2wechat": "dist/src/cli/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gangtiser/md2wechat.git"
+  },
+  "homepage": "https://github.com/gangtiser/md2wechat#readme",
+  "bugs": {
+    "url": "https://github.com/gangtiser/md2wechat/issues"
   },
   "files": [
-    "dist",
+    "dist/src",
     "skills",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "npm run build && node --test \"dist/test/**/*.test.js\"",
     "verify:api-removal": "npm run build && node --test dist/test/api-removal.test.js",
-    "verify": "npm run typecheck && npm test && npm run verify:api-removal"
+    "verify": "npm run typecheck && npm test && npm run verify:api-removal",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run typecheck && npm run build && npm run verify:api-removal"
   },
   "engines": {
     "node": ">=20"
@@ -28,5 +48,8 @@
   "devDependencies": {
     "@types/node": "^24.3.0",
     "typescript": "^5.9.2"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
