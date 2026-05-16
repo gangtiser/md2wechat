@@ -7,6 +7,8 @@ import { parseArticle } from "../src/core/article.js";
 import { failureEnvelope, successEnvelope } from "../src/core/envelope.js";
 import { sanitizeWechatHtml } from "../src/core/html.js";
 import { loadInput } from "../src/core/io.js";
+import { inspectArticle } from "../src/inspect/inspect.js";
+import { buildPreviewDocument } from "../src/preview/preview.js";
 
 test("parseArticle resolves frontmatter, heading title, body, and image references", () => {
   const article = parseArticle("---\ntitle: Front Title\nauthor: Martin\ndigest: Short\n---\n# Body Title\nText\n![Alt](./a.png)\n![Remote](https://example.com/x.jpg)");
@@ -55,4 +57,16 @@ test("loadInput reads file content and reports base directory", async () => {
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("inspectArticle reports metadata and readiness without network calls", () => {
+  const result = inspectArticle("# Title\nBody\n![A](./missing.png)", { baseDir: "/tmp" });
+  assert.equal(result.metadata.title, "Title");
+  assert.equal(result.checks.some((check) => check.code === "LOCAL_IMAGE"), true);
+});
+
+test("buildPreviewDocument wraps sanitized article HTML", () => {
+  const preview = buildPreviewDocument("<section><h1>Hi</h1></section>", { title: "Hi" });
+  assert.equal(preview.includes("<!doctype html>"), true);
+  assert.equal(preview.includes("<section><h1>Hi</h1></section>"), true);
 });
