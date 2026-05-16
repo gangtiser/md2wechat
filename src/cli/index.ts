@@ -6,9 +6,7 @@ import { parseArticle } from "../core/article.js";
 import { successEnvelope, failureEnvelope } from "../core/envelope.js";
 import { AppError, toAppError } from "../core/errors.js";
 import { loadInput } from "../core/io.js";
-import { loadConfig } from "../config/config.js";
-import { generateImage } from "../images/generate.js";
-import { createOpenAIClient } from "../openai/client.js";
+import { configStatus, loadConfig, resolveConfigPath, writeDefaultConfig } from "../config/config.js";
 import { buildPreviewDocument } from "../preview/preview.js";
 import { renderArticle } from "../renderer/render.js";
 import { inspectArticle } from "../inspect/inspect.js";
@@ -55,7 +53,7 @@ function parseArgs(argv: string[]): ParsedArgs {
       continue;
     }
 
-    if (command.length === 0 || (command[0] === "themes" && command.length === 1)) {
+    if (command.length === 0 || ((command[0] === "themes" || command[0] === "config") && command.length === 1)) {
       command.push(item);
     } else {
       values.push(item);
@@ -86,10 +84,6 @@ async function route(args: ParsedArgs): Promise<void> {
     await previewCommand(args);
     return;
   }
-  if (primary === "generate-image") {
-    await generateImageCommand(args);
-    return;
-  }
   if (primary === "themes" && secondary === "list") {
     await themesListCommand(args);
     return;
@@ -100,6 +94,14 @@ async function route(args: ParsedArgs): Promise<void> {
   }
   if (primary === "themes" && secondary === "remove") {
     await themesRemoveCommand(args);
+    return;
+  }
+  if (primary === "config" && secondary === "init") {
+    await configInitCommand(args);
+    return;
+  }
+  if (primary === "config" && secondary === "status") {
+    await configStatusCommand(args);
     return;
   }
   if (primary === "mcp") {
@@ -123,21 +125,13 @@ async function convertCommand(args: ParsedArgs): Promise<void> {
   const outputPath = stringFlag(args, "output") || stringFlag(args, "o");
   const themeId = stringFlag(args, "theme") || "default";
   const config = loadConfig();
-  const apiKey = requireOpenAIKey(config.openaiApiKey);
   const input = await loadInput({ file });
   const article = parseArticle(input.content);
   const theme = await resolveTheme(themeId, themeOptions(config));
-  const client = createOpenAIClient({
-    apiKey,
-    baseUrl: config.openaiBaseUrl,
-    textModel: config.openaiTextModel,
-    imageModel: config.openaiImageModel
-  });
   const rendered = await renderArticle({
     markdown: article.body,
     metadata: article.metadata,
-    theme,
-    client
+    theme
   });
 
   if (outputPath) {
@@ -156,21 +150,13 @@ async function previewCommand(args: ParsedArgs): Promise<void> {
   const outputPath = stringFlag(args, "output") || stringFlag(args, "o") || "preview.html";
   const themeId = stringFlag(args, "theme") || "default";
   const config = loadConfig();
-  const apiKey = requireOpenAIKey(config.openaiApiKey);
   const input = await loadInput({ file });
   const article = parseArticle(input.content);
   const theme = await resolveTheme(themeId, themeOptions(config));
-  const client = createOpenAIClient({
-    apiKey,
-    baseUrl: config.openaiBaseUrl,
-    textModel: config.openaiTextModel,
-    imageModel: config.openaiImageModel
-  });
   const rendered = await renderArticle({
     markdown: article.body,
     metadata: article.metadata,
-    theme,
-    client
+    theme
   });
   const preview = buildPreviewDocument(rendered.html, article.metadata);
   await writeOutputFile(outputPath, preview);
@@ -179,30 +165,6 @@ async function previewCommand(args: ParsedArgs): Promise<void> {
     metadata: article.metadata,
     theme_id: theme.id
   }, `Preview written to ${outputPath}`);
-}
-
-async function generateImageCommand(args: ParsedArgs): Promise<void> {
-  const config = loadConfig();
-  const apiKey = requireOpenAIKey(config.openaiApiKey);
-  const prompt = args.values[0] || "WeChat article cover image";
-  const articleFile = stringFlag(args, "article");
-  const articleContext = articleFile ? (await loadInput({ file: articleFile })).content : undefined;
-  const outputPath = stringFlag(args, "output") || stringFlag(args, "o") || "image.png";
-  const client = createOpenAIClient({
-    apiKey,
-    baseUrl: config.openaiBaseUrl,
-    textModel: config.openaiTextModel,
-    imageModel: config.openaiImageModel
-  });
-  const image = await generateImage({
-    prompt,
-    articleContext,
-    output: outputPath,
-    size: stringFlag(args, "size"),
-    quality: stringFlag(args, "quality"),
-    client
-  });
-  output(args, "IMAGE_GENERATED", "Image generated", image, `Image written to ${image.outputPath}`);
 }
 
 async function themesListCommand(args: ParsedArgs): Promise<void> {
@@ -221,6 +183,22 @@ async function themesRemoveCommand(args: ParsedArgs): Promise<void> {
   const name = requiredValue(args, 0, "theme name is required");
   await removeTheme(name, themeOptions(loadConfig()));
   output(args, "THEME_REMOVED", "Theme removed", { id: name }, `Removed theme ${name}`);
+}
+
+async function configInitCommand(args: ParsedArgs): Promise<void> {
+  const configPath = resolveConfigPath(process.env, stringFlag(args, "path"));
+  const status = await writeDefaultConfig(configPath, { force: args.flags.has("force") });
+  output(args, "CONFIG_INITIALIZED", "Config initialized", status, `Config written to ${status.config_path}`);
+}
+
+async function configStatusCommand(args: ParsedArgs): Promise<void> {
+  const config = loadConfig(process.env, { configPath: stringFlag(args, "path") });
+  const status = configStatus(config);
+  output(args, "CONFIG_STATUS", "Config status", status, [
+    `Config: ${status.config_path}`,
+    `WECHAT_APP_ID: ${status.wechat_app_id_configured ? "configured" : "missing"}`,
+    `WECHAT_APP_SECRET: ${status.wechat_app_secret_configured ? "configured" : "missing"}`
+  ].join("\n"));
 }
 
 function output(args: ParsedArgs, code: string, message: string, data: unknown, text: string): void {
@@ -246,13 +224,6 @@ function requiredValue(args: ParsedArgs, index: number, message: string): string
 function stringFlag(args: ParsedArgs, name: string): string | undefined {
   const value = args.flags.get(name);
   return typeof value === "string" ? value : undefined;
-}
-
-function requireOpenAIKey(value: string | undefined): string {
-  if (!value) {
-    throw new AppError("OPENAI_KEY_MISSING", "OPENAI_API_KEY is required");
-  }
-  return value;
 }
 
 function themeOptions(config: ReturnType<typeof loadConfig>): { registryPath?: string; projectThemesDir?: string } {

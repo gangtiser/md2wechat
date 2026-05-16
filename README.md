@@ -1,6 +1,6 @@
 # md2wechat
 
-`md2wechat` is a TypeScript CLI, Codex Skill, and MCP server for turning Markdown into WeChat Official Account HTML. It runs locally, uses OpenAI for rendering and image generation, and includes a local theme registry.
+`md2wechat` is a TypeScript CLI, Codex Skill, and MCP server for turning Markdown into WeChat Official Account HTML. It runs locally, uses deterministic conversion, and lets Codex or Claude handle any AI writing before calling the tool.
 
 ## Install
 
@@ -8,27 +8,44 @@
 npm install -g @gangtiser/md2wechat
 ```
 
-Node.js 20 or newer is required. Set your OpenAI key before conversion or image generation:
+Node.js 20 or newer is required. Initialize customer configuration before using WeChat account features:
 
 ```bash
-export OPENAI_API_KEY="your_openai_key"
+md2wechat config init
 ```
 
-## Defaults
+Open the generated config file and fill in:
 
-- Text rendering model: `gpt-5.5`
-- Image generation model: `gpt-image-2`
+```json
+{
+  "WECHAT_APP_ID": "your_app_id",
+  "WECHAT_APP_SECRET": "your_app_secret"
+}
+```
+
+Environment variables can override the file:
+
+```bash
+export WECHAT_APP_ID="your_app_id"
+export WECHAT_APP_SECRET="your_app_secret"
+```
+
+## Defaults & Agent Usage
+
 - Runtime: Node.js 20+
+- Markdown conversion: local deterministic renderer
+- AI authoring/editing: use the host agent, such as Codex or Claude CLI
 - No hosted md2wechat conversion service is used.
 
 ## CLI Usage
 
 ```bash
 md2wechat inspect article.md --json
+md2wechat config init --json
+md2wechat config status --json
 md2wechat themes list --json
 md2wechat convert article.md --theme default --output article.html --json
 md2wechat preview article.md --theme default --output preview.html --json
-md2wechat generate-image "Editorial cover for an AI article" --output cover.png --json
 ```
 
 Theme management:
@@ -55,7 +72,8 @@ Example MCP client configuration:
       "command": "md2wechat",
       "args": ["mcp"],
       "env": {
-        "OPENAI_API_KEY": "your_openai_key"
+        "WECHAT_APP_ID": "your_app_id",
+        "WECHAT_APP_SECRET": "your_app_secret"
       }
     }
   }
@@ -66,17 +84,15 @@ Available tools:
 
 - `convert_article`
 - `preview_article`
-- `generate_image`
 - `list_themes`
 - `register_theme`
 - `remove_theme`
 
 ## Configuration
 
-- `OPENAI_API_KEY`: required for conversion and image generation
-- `OPENAI_BASE_URL`: optional OpenAI-compatible base URL
-- `OPENAI_TEXT_MODEL`: optional override, defaults to `gpt-5.5`
-- `OPENAI_IMAGE_MODEL`: optional override, defaults to `gpt-image-2`
+- `WECHAT_APP_ID`: optional environment override for the configured WeChat AppID
+- `WECHAT_APP_SECRET`: optional environment override for the configured WeChat AppSecret
+- `MD2WECHAT_CONFIG`: optional path to the JSON config file
 - `MD2WECHAT_THEME_REGISTRY`: optional custom theme registry file
 - `MD2WECHAT_THEMES_DIR`: optional custom theme directory
 

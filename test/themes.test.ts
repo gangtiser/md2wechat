@@ -6,11 +6,21 @@ import test from "node:test";
 import { loadConfig } from "../src/config/config.js";
 import { listThemes, registerTheme, removeTheme } from "../src/themes/registry.js";
 
-test("loadConfig uses approved OpenAI defaults", () => {
-  const cfg = loadConfig({});
-  assert.equal(cfg.openaiTextModel, "gpt-5.5");
-  assert.equal(cfg.openaiImageModel, "gpt-image-2");
-  assert.equal(cfg.openaiBaseUrl, "https://api.openai.com/v1");
+test("loadConfig reads WeChat credentials from config file with env overrides", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "md2wechat-config-"));
+  try {
+    const configPath = path.join(dir, "config.json");
+    await writeFile(configPath, JSON.stringify({
+      WECHAT_APP_ID: "file-app",
+      WECHAT_APP_SECRET: "file-secret"
+    }));
+    const cfg = loadConfig({ WECHAT_APP_ID: "env-app" } as NodeJS.ProcessEnv, { configPath });
+    assert.equal(cfg.wechatAppId, "env-app");
+    assert.equal(cfg.wechatAppSecret, "file-secret");
+    assert.equal(cfg.configPath, configPath);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test("theme registry lists built-ins and registered custom themes", async () => {

@@ -2,8 +2,6 @@ import { parseArticle } from "../core/article.js";
 import { AppError, toAppError } from "../core/errors.js";
 import { loadInput } from "../core/io.js";
 import { loadConfig } from "../config/config.js";
-import { generateImage } from "../images/generate.js";
-import { createOpenAIClient } from "../openai/client.js";
 import { buildPreviewDocument } from "../preview/preview.js";
 import { renderArticle } from "../renderer/render.js";
 import { listThemes, registerTheme, removeTheme, resolveTheme } from "../themes/registry.js";
@@ -35,20 +33,6 @@ export function listToolSchemas(): McpToolSchema[] {
       name: "preview_article",
       description: "Render Markdown and write a local preview HTML document.",
       inputSchema: articleInputSchema({ includeOutput: true })
-    },
-    {
-      name: "generate_image",
-      description: "Generate an image with OpenAI image generation and write it to disk.",
-      inputSchema: {
-        type: "object",
-        properties: {
-          prompt: { type: "string" },
-          article: { type: "string" },
-          output: { type: "string" },
-          size: { type: "string" },
-          quality: { type: "string" }
-        }
-      }
     },
     {
       name: "list_themes",
@@ -88,8 +72,6 @@ export async function handleToolCall(name: string, args: ToolArgs = {}): Promise
         return textResult(JSON.stringify(await convertArticle(args), null, 2));
       case "preview_article":
         return textResult(JSON.stringify(await previewArticle(args), null, 2));
-      case "generate_image":
-        return textResult(JSON.stringify(await generateImageTool(args), null, 2));
       case "list_themes":
         return textResult(JSON.stringify({ themes: await listThemes(themeOptions()) }, null, 2));
       case "register_theme":
@@ -109,7 +91,6 @@ export async function handleToolCall(name: string, args: ToolArgs = {}): Promise
 }
 
 async function convertArticle(args: ToolArgs): Promise<unknown> {
-  const config = loadConfig();
   const input = await loadInput({
     content: optionalString(args, "content"),
     file: optionalString(args, "file"),
@@ -117,21 +98,14 @@ async function convertArticle(args: ToolArgs): Promise<unknown> {
   });
   const article = parseArticle(input.content);
   const theme = await resolveTheme(optionalString(args, "theme_id") || "default", themeOptions());
-  const client = createOpenAIClient({
-    apiKey: requireOpenAIKey(config.openaiApiKey),
-    baseUrl: config.openaiBaseUrl,
-    textModel: config.openaiTextModel,
-    imageModel: config.openaiImageModel
-  });
   const rendered = await renderArticle({
     markdown: article.body,
     metadata: article.metadata,
-    theme,
-    client
+    theme
   });
   return {
     html: rendered.html,
-    model: rendered.model,
+    renderer: rendered.renderer,
     theme_id: rendered.themeId,
     metadata: article.metadata
   };
@@ -146,24 +120,6 @@ async function previewArticle(args: ToolArgs): Promise<unknown> {
     ...converted,
     preview_html: buildPreviewDocument(converted.html, isRecord(converted.metadata) ? converted.metadata : {})
   };
-}
-
-async function generateImageTool(args: ToolArgs): Promise<unknown> {
-  const config = loadConfig();
-  const client = createOpenAIClient({
-    apiKey: requireOpenAIKey(config.openaiApiKey),
-    baseUrl: config.openaiBaseUrl,
-    textModel: config.openaiTextModel,
-    imageModel: config.openaiImageModel
-  });
-  return generateImage({
-    prompt: optionalString(args, "prompt") || "WeChat article cover image",
-    articleContext: optionalString(args, "article"),
-    output: optionalString(args, "output") || "image.png",
-    size: optionalString(args, "size"),
-    quality: optionalString(args, "quality"),
-    client
-  });
 }
 
 function articleInputSchema(options: { includeOutput: boolean }): McpToolSchema["inputSchema"] {
@@ -192,13 +148,6 @@ function requiredString(args: ToolArgs, key: string): string {
   const value = optionalString(args, key);
   if (!value) {
     throw new AppError("MCP_INPUT_INVALID", `${key} is required`);
-  }
-  return value;
-}
-
-function requireOpenAIKey(value: string | undefined): string {
-  if (!value) {
-    throw new AppError("OPENAI_KEY_MISSING", "OPENAI_API_KEY is required");
   }
   return value;
 }

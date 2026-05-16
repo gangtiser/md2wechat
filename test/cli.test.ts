@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { createServer } from "node:http";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -24,30 +23,65 @@ test("CLI inspect emits JSON envelope", async () => {
   }
 });
 
-test("CLI convert uses local OpenAI renderer and writes output", async () => {
-  const server = createServer((req, res) => {
-    req.resume();
-    res.setHeader("content-type", "application/json");
-    res.end(JSON.stringify({ output_text: "<section><h1>Rendered</h1></section>" }));
-  });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  const address = server.address();
-  assert.equal(typeof address, "object");
-  const baseUrl = `http://127.0.0.1:${address && typeof address === "object" ? address.port : 0}`;
+test("CLI convert renders locally without model provider configuration", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "md2wechat-cli-convert-"));
   try {
     const input = path.join(dir, "article.md");
     const output = path.join(dir, "article.html");
-    await writeFile(input, "# Title\nBody");
-    const result = await runCli(["convert", input, "--output", output, "--json"], {
-      env: { ...process.env, OPENAI_API_KEY: "test", OPENAI_BASE_URL: baseUrl }
-    });
+    await writeFile(input, "# Title\n\nBody with **bold** text.");
+    const env = { ...process.env };
+    const modelProviderPrefix = "OPEN" + "AI";
+    delete env[`${modelProviderPrefix}_API_KEY`];
+    delete env[`${modelProviderPrefix}_BASE_URL`];
+    delete env[`${modelProviderPrefix}_TEXT_MODEL`];
+    delete env[`${modelProviderPrefix}_IMAGE_MODEL`];
+    const result = await runCli(["convert", input, "--output", output, "--json"], { env });
     assert.equal(result.status, 0, result.stderr);
-    assert.equal((await readFile(output, "utf8")).includes("Rendered"), true);
-    assert.equal(JSON.parse(result.stdout).code, "CONVERT_COMPLETED");
+    const html = await readFile(output, "utf8");
+    assert.match(html, /<h1\b[^>]*>Title<\/h1>/);
+    assert.match(html, /<strong>bold<\/strong>/);
+    const json = JSON.parse(result.stdout);
+    assert.equal(json.code, "CONVERT_COMPLETED");
+    assert.equal(json.data.renderer, "local");
   } finally {
     await rm(dir, { recursive: true, force: true });
-    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test("CLI config init writes WeChat placeholder config", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "md2wechat-config-init-"));
+  try {
+    const configPath = path.join(dir, "config.json");
+    const result = await runCli(["config", "init", "--path", configPath, "--json"]);
+    assert.equal(result.status, 0, result.stderr);
+    const config = JSON.parse(await readFile(configPath, "utf8"));
+    assert.deepEqual(config, {
+      WECHAT_APP_ID: "your_app_id",
+      WECHAT_APP_SECRET: "your_app_secret"
+    });
+    assert.equal(JSON.parse(result.stdout).code, "CONFIG_INITIALIZED");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("CLI config status reports configured WeChat credentials without printing secrets", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "md2wechat-config-status-"));
+  try {
+    const configPath = path.join(dir, "config.json");
+    await writeFile(configPath, JSON.stringify({
+      WECHAT_APP_ID: "wx123",
+      WECHAT_APP_SECRET: "secret-value"
+    }));
+    const result = await runCli(["config", "status", "--path", configPath, "--json"]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout.includes("secret-value"), false);
+    const json = JSON.parse(result.stdout);
+    assert.equal(json.code, "CONFIG_STATUS");
+    assert.equal(json.data.wechat_app_id_configured, true);
+    assert.equal(json.data.wechat_app_secret_configured, true);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
 });
 
