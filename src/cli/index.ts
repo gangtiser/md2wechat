@@ -103,7 +103,9 @@ async function route(args: ParsedArgs): Promise<void> {
     return;
   }
   if (primary === "mcp") {
-    throw new AppError("MCP_NOT_READY", "MCP server entrypoint is not available yet");
+    const { startMcpServer } = await import("../mcp/server.js");
+    await startMcpServer();
+    return;
   }
 
   throw new AppError("COMMAND_INVALID", `unknown command: ${args.command.join(" ") || "(empty)"}`);
